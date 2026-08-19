@@ -1,0 +1,165 @@
+// MB5370 Module 5 - Workshop 2 Assignment
+// Mapping the world's deep ocean ecosystems
+// Author: [Alan Tavares]
+
+// ****************************
+// PART 1: Data import
+// ****************************
+
+// ETOPO1 - global relief model, includes ocean bathymetry
+
+print('ETOPO1', etopo); // check the band names
+
+var bedrock = etopo.select('bedrock');
+
+Map.setCenter(0, 0, 2);
+Map.addLayer(bedrock, {min: -8000, max: 0, palette: ['000033', '0000ff', '00ffff', 'ffffff']}, 'Bedrock elevation');
+// ****************************
+// PART 2: Classify ecosystem types
+// ****************************
+
+// Hadal trenches and troughs: deeper than 6000m
+var hadal = bedrock.lt(-6000).selfMask();
+
+// Abyssal plains: 3000-6000m
+var abyssal = bedrock.lt(-3000).and(bedrock.gte(-6000)).selfMask();
+
+// Continental and island slopes: 250-3000m
+var slope_zone = bedrock.lt(-250).and(bedrock.gte(-3000)).selfMask();
+
+// Submarine canyons: deeper than 200m AND slope > 6 degrees
+var terrain = ee.Terrain.slope(bedrock);
+var canyons = bedrock.lt(-200).and(terrain.gt(6)).selfMask();
+
+// Quick visual check - add each individually first
+Map.addLayer(hadal, {palette: ['000033']}, 'Hadal trenches (>6000m)');
+Map.addLayer(abyssal, {palette: ['0000cc']}, 'Abyssal plains (3000-6000m)');
+Map.addLayer(slope_zone, {palette: ['3399ff']}, 'Continental/island slopes (250-3000m)');
+Map.addLayer(canyons, {palette: ['ff3300']}, 'Submarine canyons');
+// ****************************
+// PART 2b: Combine into one categorical image
+// ****************************
+
+// Build a single image where each ecosystem type gets its own integer code
+// 1 = Hadal trenches, 2 = Abyssal plains, 3 = Continental/island slopes, 4 = Submarine canyons
+var ecosystems = ee.Image(0)
+  .where(bedrock.lt(-6000), 1)                                    // Hadal
+  .where(bedrock.lt(-3000).and(bedrock.gte(-6000)), 2)             // Abyssal
+  .where(bedrock.lt(-250).and(bedrock.gte(-3000)), 3)              // Slopes
+  .where(bedrock.lt(-200).and(terrain.gt(6)), 4)                   // Canyons (drawn last so it overrides)
+  .selfMask(); // remove the 0 (land / unclassified) values
+
+// Custom categorical palette - pick your own
+var ecosystemPalette = [
+  '08306b', // 1 Hadal trenches - deep navy
+  '2171b5', // 2 Abyssal plains - mid blue
+  '6baed6', // 3 Continental/island slopes - light blue
+  'fd8d3c'  // 4 Submarine canyons - orange, stands out
+];
+
+var ecosystemVis = {min: 1, max: 4, palette: ecosystemPalette};
+
+Map.addLayer(ecosystems, ecosystemVis, 'Deep ocean ecosystems');
+// ****************************
+// PART 3: Vector dataset - EEZs
+// ****************************
+ // replace with your actual asset path
+
+
+// Map.addLayer(eez, {color: 'white'}, 'Exclusive Economic Zones', true, 0.3);
+
+// ****************************
+// PART 3: Vector dataset - EEZs
+// ****************************
+// replace with your actual asset path
+// Map.addLayer(eez, {color: 'white'}, 'Exclusive Economic Zones', true, 0.3);
+// ****************************
+// PART 3: Vector dataset - EEZs
+// ****************************
+// replace with your actual asset path
+// Map.addLayer(eez, {color: 'white'}, 'Exclusive Economic Zones', true, 0.3);
+// ****************************
+// PART 3: Vector dataset - EEZs
+// ****************************
+// replace with your actual asset path
+// Map.addLayer(eez, {color: 'white'}, 'Exclusive Economic Zones', true, 0.3);
+
+// ****************************
+// PART 3: Vector dataset - Marine Protected Areas
+// ****************************
+var mpas = ee.FeatureCollection('projects/global-analysis-503904/assets/marine_protected_areas');
+
+Map.addLayer(mpas, {color: 'white'}, 'Marine Protected Areas', true, 0.3);
+// ****************************
+// PART 4: Final visualization
+// ****************************
+
+Map.setOptions('SATELLITE');
+Map.setCenter(130, -10, 3); // roughly centered near Australia/Indonesia
+
+// Re-confirm your categorical palette - customise these hex codes as you like
+// Tip: use https://coolors.co or https://colorbrewer2.org to build a considered palette
+var ecosystemPalette = [
+  '08306b', // 1 Hadal trenches
+  '2171b5', // 2 Abyssal plains
+  '6baed6', // 3 Continental/island slopes
+  'fd8d3c'  // 4 Submarine canyons
+];
+
+var ecosystemVis = {min: 1, max: 4, palette: ecosystemPalette};
+
+Map.addLayer(ecosystems, ecosystemVis, 'Deep ocean ecosystems');
+Map.addLayer(mpas, {color: 'white'}, 'Marine Protected Areas', true, 0.3);
+var ecosystemPalette = [
+  '03045e', // 1 Hadal trenches (>6000m) — near-black navy, deepest/darkest
+  '0077b6', // 2 Abyssal plains (3000-6000m) — mid ocean blue
+  '90e0ef', // 3 Continental/island slopes (250-3000m) — pale cyan, shallowest of the three
+  'f77f00'  // 4 Submarine canyons — warm orange, deliberately contrasting
+];
+// ****************************
+// PART 5: Build the app - Legend
+// ****************************
+
+var legend = ui.Panel({
+  style: {
+    position: 'bottom-left',
+    padding: '8px 15px'
+  }
+});
+
+var legendTitle = ui.Label({
+  value: 'Deep Ocean Ecosystems',
+  style: {fontWeight: 'bold', fontSize: '16px', margin: '0 0 6px 0'}
+});
+legend.add(legendTitle);
+
+var ecosystemNames = [
+  'Hadal trenches & troughs (>6000m)',
+  'Abyssal plains (3000-6000m)',
+  'Continental & island slopes (250-3000m)',
+  'Submarine canyons'
+];
+
+var makeRow = function(color, name) {
+  var colorBox = ui.Label({
+    style: {
+      backgroundColor: color,
+      padding: '8px',
+      margin: '0 0 4px 0'
+    }
+  });
+  var description = ui.Label({
+    value: name,
+    style: {margin: '0 0 4px 6px'}
+  });
+  return ui.Panel({
+    widgets: [colorBox, description],
+    layout: ui.Panel.Layout.Flow('horizontal')
+  });
+};
+
+for (var i = 0; i < ecosystemPalette.length; i++) {
+  legend.add(makeRow(ecosystemPalette[i], ecosystemNames[i]));
+}
+
+Map.add(legend);
