@@ -1,0 +1,19 @@
+
+// ============================================
+// MB5370 Module 5 - Reviewing coastal change results
+// ============================================
+
+var pop_result = ee.FeatureCollection('projects/global-analysis-503904/assets/pop_changePerGrid');
+Map.addLayer(pop_result);
+print(pop_result);
+print(pop_result.sort('mean', false)); // false = descending, highest first
+// Make an empty image and "paint" it using the mean property as the colour value
+var empty = ee.Image().byte();
+var palette = ['green', 'yellow', 'orange', 'red'];
+
+var popChangeImage = empty.paint({
+  featureCollection: pop_result,
+  color: 'mean'
+});
+
+Map.addLayer(popChangeImage, {min: 0, max: 100, palette: palette}, 'Population Change');
