@@ -1,0 +1,75 @@
+// MB5370 Module 5 - Workshop 4
+// Allen Coral Atlas: finding the best research station for coral fieldwork
+// Author: [Alan Tavares]
+
+// ****************************
+// 1. Global variables
+// ****************************
+var distance = 800; // metres we're allowed to snorkel from the station
+
+// ****************************
+// 2. Research station locations
+// ****************************
+
+var field_stations = ee.FeatureCollection([
+  HeronIsland, HamiltonIsland, LizardIsland, DaydreamIsland, OrpheusIsland,
+  MyStation1, MyStation2, MyStation3, MyStation4, MyStation5
+]);
+
+print('Field stations', field_stations);
+Map.addLayer(field_stations, {color: 'red'}, 'Research Stations');
+// ****************************
+// 3. Data import
+// ****************************
+
+
+print('Allen Coral Atlas', aca); // check the band names in the Console
+Map.centerObject(HeronIsland, 14);
+Map.addLayer(aca, {}, 'ACA raw');
+// ****************************
+// 4. Select coral only
+// ****************************
+var benthic = aca.select('benthic');
+
+// Coral/Algae = pixel value 15 (confirmed from benthic_class_values / benthic_class_names)
+var coral = benthic.eq(15).selfMask();
+
+Map.addLayer(coral, {palette: ['cyan']}, 'Coral/Algae');
+// ****************************
+// 5. Buffer stations
+// ****************************
+var bufferer = function(feature) {
+  return feature.buffer(distance);
+};
+
+var bufferedStations = field_stations.map(bufferer);
+
+print('Buffered stations', bufferedStations);
+Map.addLayer(bufferedStations, {color: 'yellow'}, 'Buffered Stations');
+// ****************************
+// 6. Coral area per station
+// ****************************
+var coral_area_img = coral.multiply(ee.Image.pixelArea());
+
+var coral_area = coral_area_img.reduceRegions({
+  collection: bufferedStations,
+  reducer: ee.Reducer.sum(),
+  scale: 5 // ACA is 5m resolution, so match it here
+});
+
+print('Coral area per station (m2)', coral_area);
+// ****************************
+// 7. Sort by coral area (best station first)
+// ****************************
+var sorted = coral_area.sort('sum', false); // false = descending, highest first
+
+print('Stations sorted by coral area (best first)', sorted);
+// ****************************
+// 8. Export results to Google Drive
+// ****************************
+Export.table.toDrive({
+  collection: sorted,
+  description: 'exportToDrive',
+  fileNamePrefix: 'research_stations_coral_area',
+  fileFormat: 'CSV'
+});
