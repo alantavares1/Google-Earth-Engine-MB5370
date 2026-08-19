@@ -1,0 +1,173 @@
+// MB5370 Module 5 Workshop 1
+print('Hello, World!');
+var the_answer = 42;          // number
+var city = 'San Francisco';   // string
+print(city);
+
+var population = 873965;
+print('The value for the population variable is:', population);
+var cities = ['San Francisco', 'Los Angeles', 'New York', 'Atlanta'];
+print(cities);
+
+var cityData = {
+  'city': 'San Francisco',
+  'coordinates': [-122.4194, 37.7749],
+  'population': 873965
+};
+print(cityData);
+var greet = function(name) {
+  return 'Hello ' + name;
+};
+// ============================================
+// Setting up the map
+// ============================================
+
+// Switch the basemap to satellite imagery
+Map.setOptions('SATELLITE');
+
+// Centre the map on Mt Taranaki, NZ. Args are: longitude, latitude, zoom level.
+Map.setCenter(174.0638, -39.298, 11);
+
+// ============================================
+// Loading and visualising an Image (raster) dataset
+// ============================================
+
+// Import SRTM elevation data (Shuttle Radar Topography Mission)
+// This is an Image: a grid of pixels, each with an elevation value in metres.
+var dataset = ee.Image("CGIAR/SRTM90_V4");
+print(dataset); // Inspect its bands and metadata in the console
+
+// Set visualisation parameters: min/max pixel values to display, and a colour ramp
+var elevationVis = {
+  min: 0,
+  max: 2500,
+  palette: ['0000ff', '00ffff', 'ffff00', 'ff0000', 'ffffff'] // blue (low) to white (high)
+};
+
+// Add the elevation layer to the map
+// Extra args here: (true = visible by default, 0.6 = opacity)
+Map.addLayer(dataset, elevationVis, 'Elevation', true, 0.6);
+// ============================================
+// Loading and visualising a Feature (vector) dataset
+// ============================================
+
+// Import the World Database on Protected Areas (WDPA)
+// This is a FeatureCollection: a "bag" of many features (polygons), each with attributes.
+var protected_areas = ee.FeatureCollection("WCMC/WDPA/current/polygons");
+
+// Add it to the map, coloured dark green
+Map.addLayer(protected_areas, {color: 'darkgreen'}, 'Protected Areas');
+
+// ============================================
+// Workshop 2 - Filters and computation
+// ============================================
+
+// How many protected areas are in the whole collection?
+print('No of protected areas:', protected_areas.size());
+// Filter only for level II protected areas (national parks)
+var iucn_pa = protected_areas.filter(ee.Filter.eq('IUCN_CAT', 'II'));
+Map.addLayer(iucn_pa, {color: 'yellow'}, 'National Parks');
+// Filter to protected areas established in or before 1980
+var iucn_pre1980 = protected_areas.filter(ee.Filter.lte('STATUS_YR', 1980));
+Map.addLayer(iucn_pre1980, {color: 'white'}, 'PAs before 1980');
+// Import country boundaries
+var countries = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017");
+
+// Isolate New Zealand only
+var nz = countries.filter(ee.Filter.eq('country_na', 'New Zealand'));
+Map.addLayer(nz, {color: 'red'}, 'NZ boundary');
+// Import country boundaries
+var countries = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017");
+// Spatial filter: only protected areas whose geometry falls inside NZ
+var nz_pas = protected_areas.filter(ee.Filter.bounds(nz));
+print('Number of PAs in NZ:', nz_pas.size());
+Map.addLayer(nz_pas, {color: 'yellow'}, 'NZ PAs only');
+// Chain filters: national parks (IUCN cat II) AND inside NZ
+var nz_national_parks = protected_areas
+  .filter(ee.Filter.eq('IUCN_CAT', 'II'))
+  .filter(ee.Filter.bounds(nz));
+
+print('Number of National Parks in NZ:', nz_national_parks.size());
+// ============================================
+// Computations on Images
+// ============================================
+
+// Add a constant of 100 to every pixel to correct a systematic error
+var srtm_fixed = dataset.add(100);
+Map.addLayer(srtm_fixed, elevationVis, 'fixed srtm');
+// Make a binary image: 1 = above 1500m, 0 = everything else, then mask out the 0s
+var elevGt1500 = dataset.gt(1500).selfMask();
+Map.addLayer(elevGt1500, {palette: 'fuchsia'}, 'gt 1500m', true, 0.7);
+// ee.Terrain.products() computes several topographic variables at once (slope, aspect, hillshade)
+var terrain = ee.Terrain.products(dataset);
+print('terrain', terrain); // inspect the bands it produced
+
+var slope = terrain.select(['slope']);
+var hillshade = terrain.select(['hillshade']);
+
+Map.addLayer(hillshade, {}, 'Hillshade');
+Map.addLayer(slope, {palette: ['white', 'darkred', 'black'], min: 0, max: 45}, 'Slope');
+// ============================================
+// Region Reducers
+// ============================================
+
+// Filter to just Egmont National Park (Mt Taranaki)
+var taranaki = protected_areas.filter(ee.Filter.eq('NAME', 'Egmont National Park'));
+Map.addLayer(taranaki, {color: 'orange'}, 'Mt Taranaki');
+// Mean slope inside the national park boundary
+var slopeOutput = slope.reduceRegion({
+  reducer: ee.Reducer.mean(),
+  geometry: taranaki,
+  scale: 90 // pixel size in metres, matches SRTM's native resolution
+});
+print('Mean slope', slopeOutput);
+// Min and max elevation inside the park, computed together (more efficient than two separate calls)
+var elevOutput_MinMax = dataset.reduceRegion({
+  reducer: ee.Reducer.minMax(),
+  geometry: taranaki,
+  scale: 90
+});
+print('Elevation min/max', elevOutput_MinMax);
+// Step A: turn each "above 1500m" pixel into its area in square metres
+var areaGt1500m = elevGt1500
+  .multiply(ee.Image.pixelArea()) // pixelArea() gives the area of each pixel
+  .reduceRegion({
+    reducer: ee.Reducer.sum(), // add up all those pixel areas
+    geometry: taranaki,
+    scale: 90
+  });
+
+print('Area above 1500m (m2)', areaGt1500m);
+
+// Step B: convert from square metres to square kilometres
+print('Area above 1500m (km2)', ee.Number(areaGt1500m.get('elevation')).divide(1e6));
+// ============================================
+// Image Reducers
+// ============================================
+
+// WORLDCLIM has 12 images in the collection - one per month
+var climate = ee.ImageCollection('WORLDCLIM/V1/MONTHLY');
+print(climate); // confirm there are 12 images inside
+
+var annualMeanTemperature = climate
+  .select('tavg')       // grab just the average-temperature band from each image
+  .mean()                // reducer: average across all 12 images, pixel by pixel
+  .multiply(0.1);        // WorldClim stores values x10, so scale back to real °C
+
+var meanTemperatureVis = {
+  min: -40, max: 30,
+  palette: ['blue', 'purple', 'cyan', 'green', 'yellow', 'red']
+};
+
+Map.setCenter(71.7, 52.4, 3); // zoom out to see a big swathe of the globe
+Map.addLayer(annualMeanTemperature, meanTemperatureVis, 'Mean Annual Temperature');
+// All Landsat 8 images over Townsville for the whole of 2017
+var landsat = ee.ImageCollection('LANDSAT/LC08/C02/T1_TOA')
+  .filterDate('2017-01-01', '2017-12-31');
+
+var trueColour = landsat.select(['B4', 'B3', 'B2']); // Red, Green, Blue bands
+var trueColourVis = {min: 0.0, max: 0.4};
+
+Map.setCenter(146.746, -19.529, 9); // Townsville, QLD
+Map.addLayer(trueColour.median(), trueColourVis, 'True Colour Median');
+
